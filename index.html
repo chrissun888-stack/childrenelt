@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>學校資料與需求更新</title>
+  <style>
+    :root { --bg:#f6f7f9; --card:#fff; --border:#d8dde6; --text:#111827; --muted:#6b7280; --ok:#0a7a2f; --err:#b42318; }
+    body { font-family: system-ui,-apple-system,"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif; margin:0; background:var(--bg); color:var(--text); }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 16px; }
+    .card { background: var(--card); border-radius: 14px; padding: 16px; box-shadow: 0 6px 18px rgba(0,0,0,.06); }
+    h1 { font-size: 18px; margin: 0 0 10px; }
+    .hint { font-size: 12px; color: var(--muted); margin: 0 0 12px; line-height: 1.5; }
+    label { display:block; font-size: 13px; color:#333; margin: 10px 0 6px; }
+    input, select, textarea { width:100%; padding: 11px 12px; border:1px solid var(--border); border-radius:10px; font-size: 15px; background:#fff; box-sizing: border-box; }
+    textarea { min-height: 96px; resize: vertical; }
+    .grid { display:grid; grid-template-columns: 1fr; gap: 12px; }
+    @media (min-width: 760px){ .grid { grid-template-columns: 1fr 1fr; } }
+    .row2 { grid-column: 1 / -1; }
+    .actions { display:flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+    button { padding: 12px 14px; border:0; border-radius: 12px; font-size: 16px; cursor:pointer; }
+    .primary { background:#111827; color:#fff; }
+    .ghost { background:#eef2f7; color:#111827; }
+    .danger { background:#b42318; color:#fff; }
+    .status { margin-top: 12px; font-size: 14px; }
+    .ok { color: var(--ok); }
+    .err { color: var(--err); }
+    .suggest { position: relative; }
+    .suggest-list {
+      position:absolute; left:0; right:0; top: 100%;
+      background:#fff; border:1px solid var(--border); border-radius: 12px;
+      margin-top: 6px; max-height: 240px; overflow:auto; z-index: 10;
+      box-shadow: 0 10px 24px rgba(0,0,0,.08);
+      display:none;
+    }
+    .suggest-item { padding: 10px 12px; cursor:pointer; border-bottom: 1px solid #eef2f7; }
+    .suggest-item:last-child { border-bottom: 0; }
+    .suggest-item:hover { background:#f3f4f6; }
+    .pill { display:inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px; background:#eef2f7; color:#111827; margin-left:8px; }
+    .readonly { background:#f9fafb; }
+    .bar { display:flex; gap: 10px; flex-wrap: wrap; }
+    .bar > div { flex: 1; min-width: 240px; }
+    .mode { display:flex; gap:10px; align-items:center; }
+    .mode span { font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>學校資料與需求更新</h1>
+      <p class="hint">
+        流程：先選擇「業務」→ 搜尋/選擇學校（或新增新客戶）→ 更新 1-5 基本資料 → 在「需求/進度更新」輸入本次紀錄（每次都會留存）→ 儲存。
+      </p>
+
+      <div class="bar">
+        <div>
+          <label>業務（必選）</label>
+          <select id="salesPerson">
+            <option value="">請選擇</option>
+            <option>全區 - Ken</option>
+            <option>北區 - Chris</option>
+            <option>中區 - Tania</option>
+            <option>南區 - Sonia</option>
+          </select>
+        </div>
+        <div>
+          <label>模式</label>
+          <div class="mode">
+            <button class="ghost" id="modeSearchBtn" type="button">搜尋既有學校</button>
+            <button class="ghost" id="modeNewBtn" type="button">新增新客戶</button>
+            <span id="modeText">目前：搜尋既有學校</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 搜尋學校 -->
+      <div id="searchBlock">
+        <label>搜尋學校（輸入關鍵字）</label>
+        <div class="suggest">
+          <input id="schoolSearch" placeholder="例如：ABC、美語、國小…（輸入 A 也可）" autocomplete="off" />
+          <div id="suggestList" class="suggest-list"></div>
+        </div>
+      </div>
+
+      <div class="grid" style="margin-top: 6px;">
+        <div>
+          <label>1. 學校代號</label>
+          <input id="schoolKey" class="readonly" readonly placeholder="選擇學校後自動帶入（新增模式可自動產生）" />
+        </div>
+        <div>
+          <label>2. 學校名稱</label>
+          <input id="schoolName" placeholder="例如：ABC 美語" />
+        </div>
+
+        <div class="row2">
+          <label>3. 學校地址</label>
+          <input id="address" placeholder="例如：台北市..." />
+        </div>
+
+        <div>
+          <label>4. 聯絡人</label>
+          <input id="contactName" placeholder="例如：王主任" />
+        </div>
+        <div>
+          <label>5. 電話</label>
+          <input id="phone" inputmode="tel" placeholder="可留空" />
+        </div>
+
+        <div class="row2">
+          <label>6. 該校需求/進度更新（每次儲存都會留下紀錄）</label>
+          <textarea id="note" placeholder="例如：需要樣書 Starter~3；下週二試教；需報價單"></textarea>
+        </div>
+
+        <div>
+          <label>最後更新時間</label>
+          <input id="lastUpdated" class="readonly" readonly />
+        </div>
+        <div>
+          <label>最後更新業務</label>
+          <input id="lastModifiedBy" class="readonly" readonly />
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="primary" id="saveBtn" type="button">儲存</button>
+        <button class="ghost" id="clearBtn" type="button">清空</button>
+      </div>
+
+      <div class="status" id="status"></div>
+      <p class="hint">
+        你只要在本檔案內填入 WEB_APP_URL 與 TOKEN，就能把資料寫進 Google Sheet。TOKEN 已內建在此檔案與後端範例中。
+      </p>
+    </div>
+  </div>
+
+<script>
+  // ===== 你要改這個：Apps Script Web App URL（部署後會給你）=====
+  const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxOHCFfPoqcsrG5oyJ3YBJmf447cRaU51g4PKn7-Zlv4HvPW98P-MuC7m_UEVAdB6WI/exec";
+  // ===== TOKEN 已內建（前後端要一致）=====
+  const TOKEN = "OuP3hDvylsnMAdQWDaCv_MBc7Btv_hIj";
+
+  const $ = (id) => document.getElementById(id);
+  const statusEl = $("status");
+  const suggestList = $("suggestList");
+
+  let debounceTimer = null;
+  let mode = "search"; // search | new
+  let currentKey = "";
+
+  function setStatus(msg, type="") {
+    statusEl.textContent = msg || "";
+    statusEl.className = "status " + type;
+  }
+
+  function requireSales() {
+    const s = $("salesPerson").value.trim();
+    if (!s) {
+      setStatus("請先選擇業務", "err");
+      return "";
+    }
+    return s;
+  }
+
+  function showSuggest(items) {
+    suggestList.innerHTML = "";
+    if (!items || items.length === 0) {
+      suggestList.style.display = "none";
+      return;
+    }
+    items.forEach(it => {
+      const div = document.createElement("div");
+      div.className = "suggest-item";
+      div.textContent = it.name || "";
+      if (it.extra) {
+        const span = document.createElement("span");
+        span.className = "pill";
+        span.textContent = it.extra;
+        div.appendChild(span);
+      }
+      div.onclick = () => selectSchool(it);
+      suggestList.appendChild(div);
+    });
+    suggestList.style.display = "block";
+  }
+
+  function hideSuggest() { suggestList.style.display = "none"; }
+
+  async function post(action, data) {
+    const payload = { token: TOKEN, action, ...data };
+    const res = await fetch(WEB_APP_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payload),
+    });
+    return await res.json();
+  }
+
+  async function searchSchools(q) { return await post("searchSchools", { q }); }
+  async function getSchool(key) { return await post("getSchool", { key }); }
+  async function updateSchool(data) { return await post("updateSchool", data); }
+  async function createSchool(data) { return await post("createSchool", data); }
+
+  async function selectSchool(it) {
+    hideSuggest();
+    $("schoolSearch").value = it.name || "";
+    setMode("search");
+    setStatus("載入資料…");
+
+    try {
+      const r = await getSchool(it.key);
+      if (!r || !r.ok) throw new Error(r?.error || "載入失敗");
+
+      const s = r.school || {};
+      currentKey = s.key || it.key || "";
+      $("schoolKey").value = currentKey;
+      $("schoolName").value = s.name || it.name || "";
+      $("address").value = s.address || "";
+      $("contactName").value = s.contactName || "";
+      $("phone").value = s.phone || "";
+      $("lastUpdated").value = s.lastUpdated || "";
+      $("lastModifiedBy").value = s.lastModifiedBy || "";
+      $("note").value = "";
+
+      setStatus("已載入，可更新並儲存。", "ok");
+    } catch (e) {
+      setStatus("載入失敗：" + String(e), "err");
+    }
+  }
+
+  // 搜尋輸入
+  $("schoolSearch").addEventListener("input", () => {
+    if (mode !== "search") return;
+    const sales = requireSales();
+    if (!sales) return;
+
+    const q = $("schoolSearch").value.trim();
+    clearTimeout(debounceTimer);
+    if (!q) { hideSuggest(); return; }
+
+    debounceTimer = setTimeout(async () => {
+      try {
+        const r = await searchSchools(q);
+        if (!r || !r.ok) throw new Error(r?.error || "搜尋失敗");
+        showSuggest((r.schools || []).slice(0, 20));
+      } catch (e) {
+        hideSuggest();
+        setStatus("搜尋失敗：" + String(e), "err");
+      }
+    }, 220);
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".suggest")) hideSuggest();
+  });
+
+  function setMode(m) {
+    mode = m;
+    $("modeText").textContent = m === "new" ? "目前：新增新客戶" : "目前：搜尋既有學校";
+    $("searchBlock").style.display = m === "search" ? "block" : "none";
+
+    if (m === "new") {
+      // 新增模式：schoolKey 先清空（由後端自動產生）
+      currentKey = "";
+      $("schoolSearch").value = "";
+      $("schoolKey").value = "";
+      $("lastUpdated").value = "";
+      $("lastModifiedBy").value = "";
+      $("note").value = "";
+      setStatus("新增模式：請手動填寫學校資料後儲存。");
+    }
+  }
+
+  $("modeSearchBtn").addEventListener("click", () => setMode("search"));
+  $("modeNewBtn").addEventListener("click", () => setMode("new"));
+
+  $("saveBtn").addEventListener("click", async () => {
+    const sales = requireSales();
+    if (!sales) return;
+
+    const name = $("schoolName").value.trim();
+    if (!name) { setStatus("請填寫學校名稱", "err"); return; }
+
+    const payload = {
+      salesPerson: sales,
+      key: $("schoolKey").value.trim(),
+      name,
+      address: $("address").value.trim(),
+      contactName: $("contactName").value.trim(),
+      phone: $("phone").value.trim(),
+      note: $("note").value.trim()
+    };
+
+    setStatus("儲存中…");
+    try {
+      let r;
+      if (mode === "new" && !payload.key) {
+        r = await createSchool(payload);
+      } else {
+        // 若是新增模式但手動填了 key，也走 create
+        if (mode === "new" && payload.key) r = await createSchool(payload);
+        else r = await updateSchool(payload);
+      }
+      if (!r || !r.ok) throw new Error(r?.error || "儲存失敗");
+
+      // 成功後：若是新增，帶回 key，並切回 search 模式（保持可查詢）
+      if (r.key) {
+        $("schoolKey").value = r.key;
+        currentKey = r.key;
+      }
+      // 重新載入，更新 lastUpdated/lastModifiedBy
+      if ($("schoolKey").value.trim()) {
+        const rr = await getSchool($("schoolKey").value.trim());
+        if (rr && rr.ok && rr.school) {
+          $("lastUpdated").value = rr.school.lastUpdated || r.lastUpdated || "";
+          $("lastModifiedBy").value = rr.school.lastModifiedBy || sales || "";
+        }
+      }
+      $("note").value = ""; // 每次紀錄儲存後清空，避免重複寫入
+      if (mode === "new") setMode("search");
+
+      setStatus("已儲存。", "ok");
+    } catch (e) {
+      setStatus("儲存失敗：" + String(e), "err");
+    }
+  });
+
+  $("clearBtn").addEventListener("click", () => {
+    $("schoolSearch").value = "";
+    $("schoolKey").value = "";
+    $("schoolName").value = "";
+    $("address").value = "";
+    $("contactName").value = "";
+    $("phone").value = "";
+    $("note").value = "";
+    $("lastUpdated").value = "";
+    $("lastModifiedBy").value = "";
+    hideSuggest();
+    currentKey = "";
+    setStatus("");
+  });
+
+  // 預設模式
+  setMode("search");
+</script>
+</body>
+</html>
