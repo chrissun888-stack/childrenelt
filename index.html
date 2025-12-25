@@ -549,10 +549,9 @@
       renderVersionFields();
       setMode("search");
     } catch (e) {
-      // 若後台回登入頁/權限頁，會顯示 Non-JSON response
       window.VERSION_OPTIONS = {};
       window.VERSION_ORDER = [];
-      renderVersionFields(); // 仍渲染（但只會空白）
+      renderVersionFields();
       setMode("search");
       setStatus("版本表清單載入失敗：" + String(e), "err");
     }
