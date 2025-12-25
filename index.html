@@ -1,561 +1,293 @@
-<!doctype html>
-<html lang="zh-Hant">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>學校 CRM（搜尋/載入/更新/新增）</title>
-  <style>
-    /* ===== A 版型（固定） ===== */
-    :root {
-      --bg:#f6f7f9; --card:#fff; --border:#d8dde6; --text:#111827;
-      --muted:#6b7280; --ok:#0a7a2f; --err:#b42318;
-      --btn:#111827; --btnText:#fff; --ghost:#eef2f7;
-      --shadow:0 6px 18px rgba(0,0,0,.06);
-      --radius:14px;
-    }
+/**
+ * 學校 CRM 後台（兒美 v1.0）
+ *
+ * Sheets:
+ * 1) schools（主資料：可覆蓋更新）
+ * 2) versions（版本表：可後台調整分類/書名/順序）
+ * 3) updates（進度歷史：每次新增一筆）
+ *
+ * 安全：
+ * - 前端送 token，後端用 TOKEN 驗證，不一致就回 Unauthorized
+ *
+ * schools 欄位（第一列標題）：
+ * SchoolKey | SchoolName | Address | ContactName | ContactTitle | Phone |
+ * VersionsJSON | VersionOther | LastUpdated | LastModifiedBy
+ *
+ * updates 欄位：
+ * Timestamp | SchoolKey | SchoolName | SalesPerson | Note | Source
+ *
+ * versions 欄位：
+ * Category | Item | CategoryOrder | ItemOrder
+ */
 
-    body {
-      font-family: system-ui,-apple-system,"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
-      margin:0;background:var(--bg);color:var(--text);
-    }
-    .wrap { max-width: 1040px; margin: 0 auto; padding: 16px; }
-    .card { background: var(--card); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); border: 1px solid transparent; }
-    h1 { font-size: 18px; margin: 0 0 10px; }
-    .hint { font-size: 12px; color: var(--muted); margin: 0 0 12px; line-height: 1.5; }
-    label { display:block; font-size: 13px; color: var(--text); margin: 10px 0 6px; opacity: .92; }
-    input, select, textarea {
-      width:100%; padding: 11px 12px; border:1px solid var(--border); border-radius:10px;
-      font-size: 15px; background: transparent; color: var(--text); box-sizing: border-box;
-      outline: none;
-    }
-    textarea { min-height: 96px; resize: vertical; }
-    .grid { display:grid; grid-template-columns: 1fr; gap: 12px; }
-    @media (min-width: 860px){ .grid { grid-template-columns: 1fr 1fr; } }
-    .row2 { grid-column: 1 / -1; }
-    .actions { display:flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
-    button { padding: 12px 14px; border:0; border-radius: 12px; font-size: 16px; cursor:pointer; }
-    .primary { background: var(--btn); color: var(--btnText); }
-    .ghost { background: var(--ghost); color: var(--text); border: 1px solid var(--border); }
-    .status { margin-top: 12px; font-size: 14px; }
-    .ok { color: var(--ok); }
-    .err { color: var(--err); }
-    .suggest { position: relative; }
-    .suggest-list {
-      position:absolute; left:0; right:0; top: 100%;
-      background:var(--card); border:1px solid var(--border); border-radius: 12px;
-      margin-top: 6px; max-height: 240px; overflow:auto; z-index: 10;
-      box-shadow: var(--shadow);
-      display:none;
-    }
-    .suggest-item { padding: 10px 12px; cursor:pointer; border-bottom: 1px solid rgba(229,231,235,.35); }
-    .suggest-item:last-child { border-bottom: 0; }
-    .suggest-item:hover { background: rgba(148,163,184,.18); }
-    .pill { display:inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: rgba(148,163,184,.18); color: var(--text); margin-left:8px; }
-    .readonly { background: rgba(148,163,184,.12); }
-    .bar { display:flex; gap: 10px; flex-wrap: wrap; }
-    .bar > div { flex: 1; min-width: 220px; }
-    .mode { display:flex; gap:10px; align-items:center; flex-wrap: wrap; }
-    .mode span { font-size: 12px; color: var(--muted); }
-    .subhead { margin-top: 16px; padding-top: 12px; border-top: 1px solid rgba(229,231,235,.35); }
-    .subhead h2 { font-size: 14px; margin: 0 0 6px; }
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <div class="card">
-      <h1>學校 CRM（搜尋/載入/更新/新增）</h1>
-      <p class="hint">
-        1-5（含聯絡人職位）與「版本表」會覆蓋更新到 schools。<br/>
-        「需求/進度更新」每次儲存都會新增一筆到 updates（留歷史）。<br/>
-        「版本表選項」由後台 versions 工作表提供，可在後台直接改分類/書名/順序。
-      </p>
+const TOKEN = "abc123";
 
-      <div class="bar">
-        <div>
-          <label>業務（必選）</label>
-          <select id="salesPerson">
-            <option value="">請選擇</option>
-            <option>全區 - Ken</option>
-            <option>北區 - Chris</option>
-            <option>中區 - Tania</option>
-            <option>南區 - Sonia</option>
-          </select>
-        </div>
-      </div>
+const SHEET_SCHOOLS = "schools";
+const SHEET_UPDATES = "updates";
+const SHEET_VERSIONS = "versions";
 
-      <div class="bar">
-        <div>
-          <label>模式</label>
-          <div class="mode">
-            <button class="ghost" id="modeSearchBtn" type="button">搜尋既有學校</button>
-            <button class="ghost" id="modeNewBtn" type="button">新增新客戶</button>
-            <span id="modeText">目前：搜尋既有學校</span>
-          </div>
-        </div>
-      </div>
+function doGet() {
+  return ContentService.createTextOutput("School CRM backend is running.");
+}
 
-      <div id="searchBlock">
-        <label>搜尋學校（輸入關鍵字）</label>
-        <div class="suggest">
-          <input id="schoolSearch" placeholder="例如：ABC、美語、國小…（輸入 A 也可）" autocomplete="off" />
-          <div id="suggestList" class="suggest-list"></div>
-        </div>
-      </div>
+function doPost(e) {
+  try {
+    const body = (e && e.postData && e.postData.contents) ? e.postData.contents : "{}";
+    const p = JSON.parse(body);
 
-      <div class="grid" style="margin-top: 6px;">
-        <div>
-          <label>1. 學校代號</label>
-          <input id="schoolKey" class="readonly" readonly placeholder="選擇學校後自動帶入（新增模式會自動產生）" />
-        </div>
-        <div>
-          <label>2. 學校名稱</label>
-          <input id="schoolName" placeholder="例如：ABC 美語" />
-        </div>
+    if (!p || p.token !== TOKEN) return json_({ ok: false, error: "Unauthorized" });
 
-        <div class="row2">
-          <label>3. 學校地址</label>
-          <input id="address" placeholder="例如：台北市..." />
-        </div>
+    ensureSheets_();
 
-        <div>
-          <label>4. 聯絡人</label>
-          <input id="contactName" placeholder="例如：王主任" />
-        </div>
-        <div>
-          <label>聯絡人職位</label>
-          <select id="contactTitle">
-            <option value="">—</option>
-            <option>校長</option>
-            <option>主任</option>
-            <option>組長</option>
-            <option>英文老師</option>
-            <option value="__other__">其他（自行輸入）</option>
-          </select>
-          <input id="contactTitleOther" style="display:none; margin-top:8px;" placeholder="請輸入職位" />
-        </div>
+    const action = String(p.action || "");
+    if (action === "searchSchools") return searchSchools_(p);
+    if (action === "getSchool") return getSchool_(p);
+    if (action === "updateSchool") return updateSchool_(p);
+    if (action === "createSchool") return createSchool_(p);
+    if (action === "getVersionOptions") return getVersionOptions_();
 
-        <div>
-          <label>5. 電話</label>
-          <input id="phone" inputmode="tel" placeholder="可留空" />
-        </div>
-        <div>
-          <label>最後更新時間</label>
-          <input id="lastUpdated" class="readonly" readonly />
-        </div>
-
-        <div>
-          <label>最後更新業務</label>
-          <input id="lastModifiedBy" class="readonly" readonly />
-        </div>
-      </div>
-
-      <div class="subhead">
-        <h2>學校使用版本表（由後台 versions 控制分類/書名/順序）</h2>
-        <p class="hint">每一類：下拉選擇（含「其他」可手寫）。</p>
-        <div class="grid" id="versionsGrid"></div>
-
-        <div class="row2" style="margin-top:12px">
-          <label>其他（補充）</label>
-          <input id="versionOther" placeholder="例如：口說/字彙/文法/考試/數位…" />
-        </div>
-      </div>
-
-      <div class="subhead">
-        <h2>6. 該校需求/進度更新（每次儲存都會留下紀錄）</h2>
-        <textarea id="note" placeholder="例如：需要樣書 Starter~3；下週二試教；需報價單"></textarea>
-      </div>
-
-      <div class="actions">
-        <button class="primary" id="saveBtn" type="button">儲存</button>
-        <button class="ghost" id="clearBtn" type="button">清空</button>
-      </div>
-
-      <div class="status" id="status"></div>
-      <p class="hint">提示：若版本表沒出現，通常是 Web App 權限或後台尚未更新部署。</p>
-    </div>
-  </div>
-
-<script>
-  // ===== 你只要確認這兩行 =====
-  const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzNGYpwRY73uoicr_a6IJjNeHILG_8X3jbE_s9o6EOIAlMc4Vrm9SE6dUQ8lwq9_SILvQ/exec";
-  const TOKEN = "abc123";
-  // ============================
-
-  const $ = (id) => document.getElementById(id);
-  const statusEl = $("status");
-  const suggestList = $("suggestList");
-  let debounceTimer = null;
-  let mode = "search";
-
-  // 後台 versions 載入後會覆寫這兩個
-  window.VERSION_OPTIONS = {};
-  window.VERSION_ORDER = [];
-
-  function setStatus(msg, type="") {
-    statusEl.textContent = msg || "";
-    statusEl.className = "status " + type;
+    return json_({ ok: false, error: "Unknown action: " + action });
+  } catch (err) {
+    return json_({ ok: false, error: String(err) });
   }
+}
 
-  function requireSales() {
-    const s = $("salesPerson").value.trim();
-    if (!s) { setStatus("請先選擇業務", "err"); return ""; }
-    return s;
-  }
+function ensureSheets_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  function hideSuggest() { suggestList.style.display = "none"; }
+  let sh = ss.getSheetByName(SHEET_SCHOOLS);
+  if (!sh) sh = ss.insertSheet(SHEET_SCHOOLS);
 
-  function showSuggest(items) {
-    suggestList.innerHTML = "";
-    if (!items || items.length === 0) { hideSuggest(); return; }
-    items.forEach(it => {
-      const div = document.createElement("div");
-      div.className = "suggest-item";
-      div.textContent = it.name || "";
-      if (it.extra) {
-        const span = document.createElement("span");
-        span.className = "pill";
-        span.textContent = it.extra;
-        div.appendChild(span);
-      }
-      div.onclick = () => selectSchool(it);
-      suggestList.appendChild(div);
-    });
-    suggestList.style.display = "block";
-  }
+  let up = ss.getSheetByName(SHEET_UPDATES);
+  if (!up) up = ss.insertSheet(SHEET_UPDATES);
 
-  async function post(action, data) {
-    const payload = { token: TOKEN, action, ...data };
-    const res = await fetch(WEB_APP_URL, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify(payload),
-    });
+  let vs = ss.getSheetByName(SHEET_VERSIONS);
+  if (!vs) vs = ss.insertSheet(SHEET_VERSIONS);
 
-    const text = await res.text();
-    try { return JSON.parse(text); }
-    catch (e) {
-      return { ok:false, error:"Non-JSON response. HTTP=" + res.status + " Body=" + text.slice(0, 200) };
-    }
-  }
+  const hSchools = [
+    "SchoolKey","SchoolName","Address","ContactName","ContactTitle","Phone",
+    "VersionsJSON","VersionOther",
+    "LastUpdated","LastModifiedBy"
+  ];
+  const hUpdates = ["Timestamp","SchoolKey","SchoolName","SalesPerson","Note","Source"];
+  const hVersions = ["Category","Item","CategoryOrder","ItemOrder"];
 
-  async function getVersionOptions() { return await post("getVersionOptions", {}); }
-  async function searchSchools(q)     { return await post("searchSchools", { q }); }
-  async function getSchool(key)       { return await post("getSchool", { key }); }
-  async function updateSchool(data)   { return await post("updateSchool", data); }
-  async function createSchool(data)   { return await post("createSchool", data); }
+  if (sh.getLastRow() === 0) sh.appendRow(hSchools);
+  if (up.getLastRow() === 0) up.appendRow(hUpdates);
+  if (vs.getLastRow() === 0) vs.appendRow(hVersions);
 
-  function setMode(m) {
-    mode = m;
-    $("modeText").textContent = m === "new" ? "目前：新增新客戶" : "目前：搜尋既有學校";
-    $("searchBlock").style.display = m === "search" ? "block" : "none";
-    if (m === "new") {
-      clearForm(false);
-      setStatus("新增模式：請手動填寫學校資料後儲存。");
-    } else {
-      setStatus("");
-    }
-  }
-
-  $("modeSearchBtn").addEventListener("click", () => setMode("search"));
-  $("modeNewBtn").addEventListener("click", () => setMode("new"));
-
-  $("schoolSearch").addEventListener("input", () => {
-    if (mode !== "search") return;
-    if (!requireSales()) return;
-
-    const q = $("schoolSearch").value.trim();
-    clearTimeout(debounceTimer);
-    if (!q) { hideSuggest(); return; }
-
-    debounceTimer = setTimeout(async () => {
-      try {
-        const r = await searchSchools(q);
-        if (!r || !r.ok) throw new Error(r?.error || "搜尋失敗");
-        showSuggest((r.schools || []).slice(0, 20));
-      } catch (e) {
-        hideSuggest();
-        setStatus("搜尋失敗：" + String(e), "err");
-      }
-    }, 220);
-  });
-
-  document.addEventListener("click", (e) => {
-    if (!e.target.closest(".suggest")) hideSuggest();
-  });
-
-  // 聯絡人職位「其他」
-  $("contactTitle").addEventListener("change", () => {
-    if ($("contactTitle").value === "__other__") {
-      $("contactTitleOther").style.display = "block";
-      $("contactTitleOther").required = true;
-    } else {
-      $("contactTitleOther").style.display = "none";
-      $("contactTitleOther").required = false;
-      $("contactTitleOther").value = "";
+  // 補齊 schools 欄位
+  const existing = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String);
+  hSchools.forEach((h) => {
+    if (existing.indexOf(h) === -1) {
+      sh.insertColumnAfter(sh.getLastColumn());
+      sh.getRange(1, sh.getLastColumn()).setValue(h);
+      existing.push(h);
     }
   });
+}
 
-  // ===== 版本表 UI（動態 from 後台）=====
-  function safeId(cat) {
-    return "v_" + btoa(unescape(encodeURIComponent(cat)))
-      .replaceAll("=", "").replaceAll("+", "_").replaceAll("/", "_");
+function json_(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function fmt_(d) {
+  return Utilities.formatDate(new Date(d), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm");
+}
+
+function idx_(headers, name) {
+  const i = headers.indexOf(name);
+  return i >= 0 ? i : -1;
+}
+
+/** 搜尋學校：用 key/name/address 模糊比對 */
+function searchSchools_(p) {
+  const q = String(p.q || "").trim().toLowerCase();
+  if (!q) return json_({ ok: true, schools: [] });
+
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_SCHOOLS);
+  const values = sh.getDataRange().getValues();
+
+  const out = [];
+  for (let r = 1; r < values.length; r++) {
+    const key = String(values[r][0] || "");
+    const name = String(values[r][1] || "");
+    const addr = String(values[r][2] || "");
+    if (!key && !name) continue;
+
+    const hay = (key + " " + name + " " + addr).toLowerCase();
+    if (hay.indexOf(q) !== -1) {
+      out.push({ key, name, extra: addr ? addr.slice(0, 14) : "" });
+      if (out.length >= 20) break;
+    }
   }
 
-  function renderVersionFields() {
-    const grid = $("versionsGrid");
-    grid.innerHTML = "";
+  return json_({ ok: true, schools: out });
+}
 
-    const order = window.VERSION_ORDER || [];
-    const options = window.VERSION_OPTIONS || {};
+/** 取得單一學校資料 */
+function getSchool_(p) {
+  const key = String(p.key || "").trim();
+  if (!key) return json_({ ok: false, error: "Missing key" });
 
-    order.forEach(cat => {
-      const id = safeId(cat);
-      const otherId = id + "_other";
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_SCHOOLS);
+  const values = sh.getDataRange().getValues();
+  const headers = values[0].map(String);
 
-      const block = document.createElement("div");
-      block.innerHTML = `
-        <label>${cat}</label>
-        <select id="${id}"></select>
-        <input id="${otherId}" style="display:none; margin-top:8px;" placeholder="${cat}：其他請輸入" />
-      `;
-      grid.appendChild(block);
+  for (let r = 1; r < values.length; r++) {
+    if (String(values[r][0] || "").trim() === key) {
+      const row = values[r];
+      const get = (name) => {
+        const c = idx_(headers, name);
+        return c >= 0 ? row[c] : "";
+      };
 
-      const sel = $(id);
-      sel.appendChild(new Option("—", ""));
-
-      ((options && options[cat]) ? options[cat] : ["（其他）"]).forEach(o => {
-        if (o === "（其他）") sel.appendChild(new Option("其他（自行輸入）", "__other__"));
-        else sel.appendChild(new Option(o, o));
-      });
-
-      sel.addEventListener("change", () => {
-        const other = $(otherId);
-        if (sel.value === "__other__") {
-          other.style.display = "block";
-          other.required = true;
-        } else {
-          other.style.display = "none";
-          other.required = false;
-          other.value = "";
+      return json_({
+        ok: true,
+        school: {
+          key: String(get("SchoolKey") || ""),
+          name: String(get("SchoolName") || ""),
+          address: String(get("Address") || ""),
+          contactName: String(get("ContactName") || ""),
+          contactTitle: String(get("ContactTitle") || ""),
+          phone: String(get("Phone") || ""),
+          versionsJson: String(get("VersionsJSON") || ""),
+          versionOther: String(get("VersionOther") || ""),
+          lastUpdated: get("LastUpdated") ? fmt_(get("LastUpdated")) : "",
+          lastModifiedBy: String(get("LastModifiedBy") || "")
         }
       });
-    });
-  }
-
-  function getVersionValue(cat) {
-    const id = safeId(cat);
-    const sel = $(id);
-    const other = $(id + "_other");
-    if (!sel) return "";
-    return sel.value === "__other__" ? (other.value || "").trim() : (sel.value || "").trim();
-  }
-
-  function setVersionValueByCat(cat, val) {
-    const id = safeId(cat);
-    const sel = $(id);
-    const other = $(id + "_other");
-    if (!sel) return;
-
-    if (!val) {
-      sel.value = "";
-      other.style.display = "none";
-      other.value = "";
-      other.required = false;
-      return;
-    }
-
-    const opts = Array.from(sel.options).map(o => o.value);
-    if (opts.includes(val)) {
-      sel.value = val;
-      other.style.display = "none";
-      other.value = "";
-      other.required = false;
-    } else {
-      sel.value = "__other__";
-      other.style.display = "block";
-      other.value = val;
-      other.required = true;
     }
   }
 
-  function buildVersionsPayload() {
-    const versions = {};
-    (window.VERSION_ORDER || []).forEach(cat => versions[cat] = getVersionValue(cat));
-    return versions;
-  }
-  // ======================================
+  return json_({ ok: false, error: "School not found" });
+}
 
-  async function selectSchool(it) {
-    hideSuggest();
-    $("schoolSearch").value = it.name || "";
-    setStatus("載入資料…");
-    try {
-      const r = await getSchool(it.key);
-      if (!r || !r.ok) throw new Error(r?.error || "載入失敗");
-      const s = r.school || {};
+/** 更新學校：覆蓋主資料；若 note 有值則追加 updates */
+function updateSchool_(p) {
+  const key = String(p.key || "").trim();
+  const sales = String(p.salesPerson || "").trim();
+  if (!sales) return json_({ ok: false, error: "Missing salesPerson" });
+  if (!key) return json_({ ok: false, error: "Missing key" });
 
-      $("schoolKey").value = s.key || it.key || "";
-      $("schoolName").value = s.name || it.name || "";
-      $("address").value = s.address || "";
-      $("contactName").value = s.contactName || "";
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(SHEET_SCHOOLS);
+  const up = ss.getSheetByName(SHEET_UPDATES);
 
-      const title = s.contactTitle || "";
-      if (["校長","主任","組長","英文老師"].includes(title)) {
-        $("contactTitle").value = title;
-        $("contactTitleOther").style.display = "none";
-        $("contactTitleOther").value = "";
-        $("contactTitleOther").required = false;
-      } else if (title) {
-        $("contactTitle").value = "__other__";
-        $("contactTitleOther").style.display = "block";
-        $("contactTitleOther").value = title;
-        $("contactTitleOther").required = true;
-      } else {
-        $("contactTitle").value = "";
-        $("contactTitleOther").style.display = "none";
-        $("contactTitleOther").value = "";
-        $("contactTitleOther").required = false;
-      }
+  const values = sh.getDataRange().getValues();
+  const headers = values[0].map(String);
+  const now = new Date();
 
-      $("phone").value = s.phone || "";
+  for (let r = 1; r < values.length; r++) {
+    if (String(values[r][0] || "").trim() === key) {
+      const set = (name, val) => {
+        const c = idx_(headers, name);
+        if (c >= 0) sh.getRange(r + 1, c + 1).setValue(val);
+      };
 
-      // 版本表：後台用 JSON 字串存
-      let versions = {};
-      try { versions = s.versionsJson ? JSON.parse(s.versionsJson) : {}; } catch(e) { versions = {}; }
-      (window.VERSION_ORDER || []).forEach(cat => setVersionValueByCat(cat, versions[cat] || ""));
+      set("SchoolName", String(p.name || "").trim());
+      set("Address", String(p.address || "").trim());
+      set("ContactName", String(p.contactName || "").trim());
+      set("ContactTitle", String(p.contactTitle || "").trim());
+      set("Phone", String(p.phone || "").trim());
 
-      $("versionOther").value = s.versionOther || "";
-      $("lastUpdated").value = s.lastUpdated || "";
-      $("lastModifiedBy").value = s.lastModifiedBy || "";
-      $("note").value = "";
+      set("VersionsJSON", String(p.versionsJson || "").trim());
+      set("VersionOther", String(p.versionOther || "").trim());
 
-      setStatus("已載入，可更新並儲存。", "ok");
-    } catch (e) {
-      setStatus("載入失敗：" + String(e), "err");
+      set("LastUpdated", now);
+      set("LastModifiedBy", sales);
+
+      const note = String(p.note || "").trim();
+      if (note) up.appendRow([now, key, String(p.name || ""), sales, note, "HTML"]);
+
+      return json_({ ok: true });
     }
   }
 
-  function clearForm(clearSales=true) {
-    if (clearSales) $("salesPerson").value = "";
-    $("schoolSearch").value = "";
-    $("schoolKey").value = "";
-    $("schoolName").value = "";
-    $("address").value = "";
-    $("contactName").value = "";
-    $("contactTitle").value = "";
-    $("contactTitleOther").style.display = "none";
-    $("contactTitleOther").value = "";
-    $("contactTitleOther").required = false;
-    $("phone").value = "";
+  return json_({ ok: false, error: "School not found" });
+}
 
-    (window.VERSION_ORDER || []).forEach(cat => {
-      const id = safeId(cat);
-      const sel = $(id);
-      const other = $(id + "_other");
-      if (sel) sel.value = "";
-      if (other) {
-        other.style.display = "none";
-        other.value = "";
-        other.required = false;
-      }
-    });
-    $("versionOther").value = "";
+/** 新增學校：若沒 key，後台自動產生；若 note 有值則追加 updates */
+function createSchool_(p) {
+  const sales = String(p.salesPerson || "").trim();
+  const name = String(p.name || "").trim();
+  if (!sales) return json_({ ok: false, error: "Missing salesPerson" });
+  if (!name) return json_({ ok: false, error: "Missing name" });
 
-    $("note").value = "";
-    $("lastUpdated").value = "";
-    $("lastModifiedBy").value = "";
-    hideSuggest();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(SHEET_SCHOOLS);
+  const up = ss.getSheetByName(SHEET_UPDATES);
+
+  const values = sh.getDataRange().getValues();
+  const now = new Date();
+
+  let key = String(p.key || "").trim();
+  if (!key) key = Utilities.getUuid().replace(/-/g, "").slice(0, 10).toUpperCase();
+
+  // key 不能重複
+  for (let r = 1; r < values.length; r++) {
+    if (String(values[r][0] || "").trim() === key) {
+      return json_({ ok: false, error: "SchoolKey already exists" });
+    }
   }
 
-  $("saveBtn").addEventListener("click", async () => {
-    const sales = requireSales();
-    if (!sales) return;
+  sh.appendRow([
+    key,
+    name,
+    String(p.address || "").trim(),
+    String(p.contactName || "").trim(),
+    String(p.contactTitle || "").trim(),
+    String(p.phone || "").trim(),
+    String(p.versionsJson || "").trim(),
+    String(p.versionOther || "").trim(),
+    now,
+    sales
+  ]);
 
-    const name = $("schoolName").value.trim();
-    if (!name) { setStatus("請填寫學校名稱", "err"); return; }
+  const note = String(p.note || "").trim();
+  if (note) up.appendRow([now, key, name, sales, note, "HTML"]);
 
-    // 防呆：搜尋模式下沒有 key 就不能更新
-    if (mode !== "new" && !$("schoolKey").value.trim()) {
-      setStatus("請先從搜尋結果點選一間學校（帶入學校代號），或改用「新增新客戶」。", "err");
-      return;
-    }
+  return json_({ ok: true, key });
+}
 
-    const title = ($("contactTitle").value === "__other__")
-      ? $("contactTitleOther").value.trim()
-      : $("contactTitle").value.trim();
+/** 從 versions 分頁回傳：分類 options + order（依 CategoryOrder/ItemOrder 排序） */
+function getVersionOptions_() {
+  const vs = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_VERSIONS);
+  const values = vs.getDataRange().getValues();
+  if (values.length <= 1) return json_({ ok: true, options: {}, order: [] });
 
-    const payload = {
-      salesPerson: sales,
-      key: $("schoolKey").value.trim(),
-      name,
-      address: $("address").value.trim(),
-      contactName: $("contactName").value.trim(),
-      contactTitle: title,
-      phone: $("phone").value.trim(),
-      versionsJson: JSON.stringify(buildVersionsPayload()),
-      versionOther: $("versionOther").value.trim(),
-      note: $("note").value.trim()
-    };
+  const headers = values[0].map(String);
+  const cCat = idx_(headers, "Category");
+  const cItem = idx_(headers, "Item");
+  const cCO = idx_(headers, "CategoryOrder");
+  const cIO = idx_(headers, "ItemOrder");
 
-    setStatus("儲存中…");
-    try {
-      let r;
-      if (mode === "new") r = await createSchool(payload);
-      else r = await updateSchool(payload);
+  const rows = [];
+  for (let r = 1; r < values.length; r++) {
+    const cat = String(values[r][cCat] || "").trim();
+    const item = String(values[r][cItem] || "").trim();
+    if (!cat || !item) continue;
 
-      if (!r || !r.ok) throw new Error(r?.error || "儲存失敗");
-      if (r.key) $("schoolKey").value = r.key;
+    const co = Number(values[r][cCO] || 0);
+    const io = Number(values[r][cIO] || 0);
+    rows.push({ cat, item, co, io });
+  }
 
-      // 重新抓一次，更新 lastUpdated/lastModifiedBy
-      const key = $("schoolKey").value.trim();
-      if (key) {
-        const rr = await getSchool(key);
-        if (rr && rr.ok && rr.school) {
-          $("lastUpdated").value = rr.school.lastUpdated || "";
-          $("lastModifiedBy").value = rr.school.lastModifiedBy || sales;
-        }
-      }
+  // 先依 category order，再依 item order
+  rows.sort((a, b) => (a.co - b.co) || a.cat.localeCompare(b.cat) || (a.io - b.io) || a.item.localeCompare(b.item));
 
-      $("note").value = "";
-      if (mode === "new") setMode("search");
-
-      setStatus("已儲存。", "ok");
-    } catch (e) {
-      setStatus("儲存失敗：" + String(e), "err");
-    }
+  const options = {};
+  const orderMap = {};
+  rows.forEach(x => {
+    if (!options[x.cat]) options[x.cat] = [];
+    options[x.cat].push(x.item);
+    if (orderMap[x.cat] === undefined) orderMap[x.cat] = x.co;
   });
 
-  $("clearBtn").addEventListener("click", () => {
-    clearForm(true);
-    setStatus("");
-  });
+  // 產生分類 order（依 CategoryOrder）
+  const order = Object.keys(options).sort((a, b) => (orderMap[a] - orderMap[b]) || a.localeCompare(b));
 
-  // ===== 初始化：先向後台載入 versions 清單（分類/書名/順序）=====
-  (async function init() {
-    setStatus("載入版本表清單…");
-    try {
-      const r = await getVersionOptions();
-      if (!r || !r.ok) throw new Error(r?.error || "載入版本表失敗");
-
-      window.VERSION_OPTIONS = r.options || {};
-      window.VERSION_ORDER = (r.order && r.order.length) ? r.order : [];
-
-      if (!window.VERSION_ORDER.length) {
-        setStatus("版本表清單是空的：請到試算表 versions 工作表新增 Category/Item/順序。", "err");
-      } else {
-        setStatus("");
-      }
-
-      renderVersionFields();
-      setMode("search");
-    } catch (e) {
-      window.VERSION_OPTIONS = {};
-      window.VERSION_ORDER = [];
-      renderVersionFields();
-      setMode("search");
-      setStatus("版本表清單載入失敗：" + String(e), "err");
-    }
-  })();
-</script>
-</body>
-</html>
+  return json_({ ok: true, options, order });
+}
